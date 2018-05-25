@@ -1,8 +1,8 @@
 "use strict"
 
 const zlib = require("zlib"),
-      lzma = require("lzma-native"),
-      deasync = require("deasync")
+	lzma = require("lzma-native"),
+	deasync = require("deasync")
 
 require("./AMF/AMF0")
 require("./AMF/AMF3")
@@ -223,17 +223,25 @@ class ByteArray {
 	 * @returns {number}
 	 */
 	readBytes(bytes, offset = 0, length = 0) {
-		if (offset === undefined) {
-			offset = 0
+		if (bytes == null) {
+			throw new Error(`ByteArray::readBytes - Error: ${bytes} can't be empty`)
 		}
-		if (length === undefined || length === 0) {
+		if (length == 0) {
 			length = this.bytesAvailable
 		}
-		let endOffset = offset + length
-		for (let i = offset; i < endOffset; i++) {
-			bytes[i] = this.readByte()
-			return bytes[i]
+		let total = offset + length
+		if (total != offset + length) {
+			throw new RangeError(`ByteArray::readBytes - Error: 32-bit overflow`)
 		}
+		if (offset + length >= bytes.length) {
+			bytes.length = offset + length
+		}
+		let bytearray = []
+		for (let i = offset; i < length && this.bytesAvailable > 0; i++) {
+			bytearray.push(bytes.writeByte(this.readByte()))
+			//console.log(bytes.writeByte(this.readByte()))
+		}
+		return bytearray
 	}
 	/**
 	 * Reads an IEEE 754 double-precision (64-bit) floating-point number from the byte stream.
@@ -324,7 +332,8 @@ class ByteArray {
 			: this.buffer.readUInt16LE(this.updatePosition(2))
 	}
 	/**
-	 * Reads a UTF-8 string from the byte stream. The string is assumed to be prefixed with an unsigned short indicating the length in bytes.
+	 * Reads a UTF-8 string from the byte stream.
+	 * The string is assumed to be prefixed with an unsigned short indicating the length in bytes.
 	 * @returns {string}
 	 */
 	readUTF() {
@@ -433,19 +442,6 @@ class ByteArray {
 			: this.buffer.readUInt32LE(this.updatePosition(4)) | this.buffer.readUInt32LE(this.updatePosition(4))
 	}
 	/**
-	 * Reads an integer from the byte stream with specified null bytes at end.
-	 * @param {number} bytes
-	 * @returns {number}
-	 */
-	readIntegerWithLength(bytes) {
-		let result = 0
-		for (let i = bytes - 1; i >= 0; i--) {
-			result = ((result << 8) | this.buffer[this.offset + i]) >>> 0
-		}
-		this.offset += bytes
-		return result
-	}
-	/**
 	 * Reads a var-integer from the byte stream.
 	 * @returns {number}
 	 */
@@ -468,7 +464,8 @@ class ByteArray {
 		return this.readVarInt() >>> 1 ^ -(this.readVarInt() & 1)
 	}
 	/**
-	 * Writes a Boolean value. A single byte is written according to the value parameter, either 1 if true or 0 if false.
+	 * Writes a Boolean value.
+	 * A single byte is written according to the value parameter, either 1 if true or 0 if false.
 	 * @param {boolean} value
 	 */
 	writeBoolean(value) {
@@ -491,26 +488,26 @@ class ByteArray {
 	 * @param {number} length
 	 */
 	writeBytes(bytes, offset = 0, length = 0) {
-		if (offset === undefined || offset < 0 || offset >= bytes.length) {
-			offset = 0
+		if (bytes == null) {
+			throw new Error(`ByteArray::writeBytes - Error: ${bytes} can't be empty`)
 		}
-		let endOffset
-		if (length === undefined || length === 0) {
-			endOffset = bytes.length
-		} else {
-			endOffset = offset + length
-			if (endOffset < 0 || endOffset > bytes.length) {
-				endOffset = bytes.length
-			}
+		if (length == 0) {
+			length = bytes.length - offset
 		}
-		if (Array.isArray(bytes)) {
-			for (let i = 0; i < bytes.length; i++) {
-				this.writeByte(bytes[i])
-			}
-		} else {
-			for (let i = offset; i < endOffset && this.bytesAvailable > 0; i++) {
-				this.writeByte(bytes[i])
-			}
+		if (offset > bytes.length) {
+			offset = bytes.length
+		}
+		if (length > bytes.length - offset) {
+			throw new RangeError(`ByteArray::writeBytes - Error: ${length} is higher than ${bytes.length - offset}`)
+		}
+		let ba = new ByteArray(bytes.length)
+		for (let i = 0; i < bytes.length; i++) {
+			ba.writeByte(bytes[i])
+		}
+		length = length || ba.length
+		ba.reset()
+		for (let i = offset; i < length && this.bytesAvailable > 0; i++) {
+			this.writeByte(ba.readByte())
 		}
 	}
 	/**
@@ -570,7 +567,8 @@ class ByteArray {
 		}
 	}
 	/**
-	 * Writes a 16-bit integer to the byte stream. The low 16 bits of the parameter are used. The high 16 bits are ignored.
+	 * Writes a 16-bit integer to the byte stream.
+	 * The low 16 bits of the parameter are used. The high 16 bits are ignored.
 	 * @param {number} value
 	 */
 	writeShort(value) {
@@ -611,11 +609,15 @@ class ByteArray {
 	writeUTF(str) {
 		str = this.axCoerceString(str)
 		let length = Buffer.byteLength(str)
+		if (length > 65535) {
+			throw new RangeError(`ByteArray::writeUTF - Error: ${length} is out of range`)
+		}
 		this.writeShort(length)
 		return this.buffer.write(str, this.offset, this.offset += length, "utf8")
 	}
 	/**
-	 * Writes a UTF-8 string to the byte stream. Similar to the writeUTF() method, but writeUTFBytes() does not prefix the string with a 16-bit length word.
+	 * Writes a UTF-8 string to the byte stream.
+	 * Similar to the writeUTF() method, but writeUTFBytes() does not prefix the string with a 16-bit length word.
 	 * @param {string} str
 	 */
 	writeUTFBytes(str) {
@@ -699,20 +701,6 @@ class ByteArray {
 		return this.endian === Values.BIG_ENDIAN
 			? this.buffer.writeUInt32BE(high, this.updatePosition(4)) | this.buffer.writeUInt32BE(low, this.updatePosition(4))
 			: this.buffer.writeUInt32LE(value % 0x100000000, this.updatePosition(4)) | this.buffer.writeUInt32LE(Math.floor(value / 0x100000000), this.updatePosition(4))
-	}
-	/**
-	 * Writes an integer to the byte stream with specified null bytes at end.
-	 * @param {number} bytes
-	 * @param {number} value
-	 */
-	writeIntegerWithLength(bytes, value) {
-		if (bytes > Values.MAX_BUFFER_SIZE || value > Values.MAX_BUFFER_SIZE) {
-			throw new RangeError(`ByteArray::writeIntegerWithLength - Error: ${bytes} | ${value} are out of bounds`)
-		}
-		for (let i = 0; i < bytes; i++) {
-			this.buffer[0 + i] = (value >> (i * 8)) & 0xFF
-		}
-		this.offset += bytes
 	}
 	/**
 	 * Writes a var-integer to the byte stream.

@@ -10,6 +10,16 @@ tape("Write using Buffer and read using DataView", (v) => {
 	v.end()
 })
 
+tape("Write/read multiple bytes", (v) => {
+	const wba = new ByteArray()
+	wba.writeBytes([1, 2, 3, 4], 0, 4)
+	wba.reset()
+	const rba = new ByteArray()
+	v.deepEqual(wba.readBytes(rba, 0, 3), [1, 2, 3]) // We read 3 of the 4 bytes
+	v.equal(wba.readByte(), 4) // We read the last byte
+	v.end()
+})
+
 tape("Write/read a byte", (v) => {
 	const wba = new ByteArray()
 	wba.writeByte(5)
@@ -29,7 +39,7 @@ tape("Write/read a boolean", (v) => {
 tape("Write/read a byte without new constructor", (v) => {
 	const wba = new ByteArray()
 	wba.writeByte(10)
-	wba.position = 0
+	wba.reset() // Sets the offset (position) to 0
 	v.equal(wba.readByte(), 10)
 	v.end()
 })
@@ -44,7 +54,7 @@ tape("Write/read a string", (v) => {
 
 tape("Write/read an AMF0 object", (v) => {
 	const wba = new ByteArray()
-	wba.objectEncoding = 0
+	wba.objectEncoding = 0 // AMF0
 	wba.writeObject({ id: 1 })
 	v.deepEqual(wba.readObject(), { len: 17, value: { id: 1 } })
 	v.end()
@@ -52,7 +62,7 @@ tape("Write/read an AMF0 object", (v) => {
 
 tape("Write/read an AMF3 object", (v) => {
 	const wba = new ByteArray()
-	wba.objectEncoding = 3
+	wba.objectEncoding = 3 // AMF3
 	wba.writeObject({ id: 1 })
 	v.deepEqual(wba.readObject(), { id: 1 })
 	v.end()
@@ -77,15 +87,15 @@ tape("Write/read IEEE754 float", (v) => {
 tape("Write/read multiByte", (v) => {
 	const wba = new ByteArray()
 	wba.writeMultiByte("Hello ByteArray.js", "utf8")
-	wba.position = 0
+	wba.reset()
 	v.equal(wba.readMultiByte(18, "utf8"), "Hello ByteArray.js")
 	v.end()
 })
 
-tape("Write/read int8array", (v) => {
+tape("Write/read int8array", (v) => { // Similar to writeBytes, but less hacky
 	const wba = new ByteArray()
 	wba.writeByteArray([1, 2, 3, 4, 5, 6])
-	wba.position = 0
+	wba.reset()
 	v.deepEqual(wba.readByteArray(6), [1, 2, 3, 4, 5, 6])
 	v.end()
 })
@@ -93,7 +103,7 @@ tape("Write/read int8array", (v) => {
 tape("Write/read int64", (v) => {
 	const wba = new ByteArray()
 	wba.writeLong(64)
-	wba.position = 0
+	wba.reset()
 	v.equal(wba.readLong(), 64)
 	v.end()
 })
@@ -101,7 +111,7 @@ tape("Write/read int64", (v) => {
 tape("Write/read var-integer", (v) => {
 	const wba = new ByteArray()
 	wba.writeVarInt(300)
-	wba.position = 0
+	wba.reset()
 	v.equal(wba.readVarInt(), 44)
 	v.end()
 })
@@ -116,7 +126,7 @@ tape("Compress/decompress a string", (v) => {
 	const wba = new ByteArray()
 	wba.writeUTF("Hello ByteArray.js!")
 	wba.compress("zlib")
-	wba.position = 0
+	wba.reset()
 	fs.readFile("test.secret", wba.uncompress("zlib"), (err, data) => {
 		if (err) throw err
 		v.equal(wba.readUTF(), "Hello ByteArray.js!")
@@ -152,7 +162,7 @@ tape("Adobe's example", (v) => {
 	wba.writeBoolean(false)
 	wba.writeDouble(Math.PI)
 	wba.writeUTFBytes("Hello world")
-	wba.position = 0
+	wba.reset()
 	v.equal(wba.readBoolean() == false, true)
 	v.equal(wba.readDouble(), 3.141592653589793)
 	v.equal(wba.readUTFBytes(11), "Hello world")
